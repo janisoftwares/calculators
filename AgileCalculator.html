@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Agile Sprint Calculator - Per Metric</title>
+  <style>
+    body { font-family: Arial; margin: 20px; background: #f7f9fb; }
+    h1, h2 { color: #2c3e50; }
+    .section { background: #fff; padding: 15px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+    input[type="number"], input[type="text"] { width: 80px; padding: 5px; margin: 5px; }
+    .result { margin-top: 10px; font-weight: bold; color: #2c3e50; }
+    .insight { font-style: italic; font-size: 0.9em; margin-left: 10px; }
+    .good { color: green; }
+    .warning { color: orange; }
+    .bad { color: red; }
+    button { padding: 6px 12px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #2980b9; }
+  </style>
+</head>
+<body>
+
+<h1>Agile Scrum Sprint Calculator</h1>
+
+<div id="calculator"></div>
+
+<script>
+  const metrics = [
+    {
+      name: "Velocity",
+      inputs: ["Story Points (comma-separated)"],
+      compute: ([val]) => {
+        const nums = val.split(",").map(Number).filter(n => !isNaN(n));
+        const velocity = nums.reduce((a, b) => a + b, 0) / (nums.length || 1);
+        return [velocity, `Velocity: ${velocity.toFixed(2)} points`, "Stable if consistent"];
+      }
+    },
+    {
+      name: "Sprint Capacity",
+      inputs: ["Team Members", "Hours/Day", "Sprint Days"],
+      compute: ([m, h, d]) => {
+        const capacity = m * h * d;
+        return [capacity, `Capacity: ${capacity} hours`, ""];
+      }
+    },
+    {
+      name: "Load Factor",
+      inputs: ["Actual Hours", "Estimated Hours"],
+      compute: ([actual, estimated]) => {
+        if (estimated <= 0) return [null, "N/A", ""];
+        const factor = actual / estimated;
+        const text = `Load Factor: ${factor.toFixed(2)}`;
+        const insight = factor < 0.8 ? "Overestimated" : factor <= 1.2 ? "Healthy" : "Underestimated/Overload";
+        return [factor, text, insight];
+      }
+    },
+    {
+      name: "Focus Factor",
+      inputs: ["Actual Velocity", "Capacity (points)"],
+      compute: ([v, c]) => {
+        if (c <= 0) return [null, "N/A", ""];
+        const f = v / c;
+        const text = `Focus Factor: ${f.toFixed(2)}`;
+        const insight = f >= 0.6 && f <= 0.8 ? "Good Focus" : f < 0.6 ? "Too Many Interruptions" : "Too High Pressure";
+        return [f, text, insight];
+      }
+    },
+    {
+      name: "Burn Rate",
+      inputs: ["Points Completed", "Days Elapsed"],
+      compute: ([p, d]) => {
+        if (d <= 0) return [null, "N/A", ""];
+        const r = p / d;
+        return [r, `Burn Rate: ${r.toFixed(2)} pts/day`, "Should be stable or increasing"];
+      }
+    },
+    {
+      name: "Ideal Burndown",
+      inputs: ["Total Points", "Sprint Days"],
+      compute: ([p, d]) => {
+        if (d <= 0) return [null, "N/A", ""];
+        const r = p / d;
+        return [r, `Ideal Burn: ${r.toFixed(2)} pts/day`, "Used as baseline"];
+      }
+    },
+    {
+      name: "Remaining Work",
+      inputs: ["Committed Points", "Completed Points"],
+      compute: ([c, d]) => {
+        const rem = c - d;
+        return [rem, `Remaining: ${rem} points`, rem === 0 ? "Completed Fully" : rem > 0 ? "Incomplete Work" : "Over-delivered"];
+      }
+    },
+    {
+      name: "Estimated Completion Days",
+      inputs: ["Remaining Points", "Burn Rate"],
+      compute: ([r, b]) => {
+        if (b <= 0) return [null, "N/A", ""];
+        const days = r / b;
+        return [days, `Estimated: ${days.toFixed(2)} days`, "Should fit within sprint length"];
+      }
+    },
+    {
+      name: "Utilization %",
+      inputs: ["Actual Effort", "Capacity"],
+      compute: ([e, c]) => {
+        if (c <= 0) return [null, "N/A", ""];
+        const percent = (e / c) * 100;
+        const text = `Utilization: ${percent.toFixed(2)}%`;
+        const insight = percent < 70 ? "Underutilized" : percent <= 90 ? "Healthy" : "Burnout Risk";
+        return [percent, text, insight];
+      }
+    },
+    {
+      name: "% of Commitment Delivered",
+      inputs: ["Completed", "Committed"],
+      compute: ([d, c]) => {
+        if (c <= 0) return [null, "N/A", ""];
+        const percent = (d / c) * 100;
+        const text = `Delivered: ${percent.toFixed(2)}%`;
+        const insight = percent >= 90 ? "Reliable Planning" : percent >= 80 ? "Acceptable" : "Overcommitted or Delayed";
+        return [percent, text, insight];
+      }
+    },
+    {
+      name: "Sprints Needed",
+      inputs: ["Backlog Points", "Avg Velocity"],
+      compute: ([b, v]) => {
+        if (v <= 0) return [null, "N/A", ""];
+        const sprints = b / v;
+        return [sprints, `Sprints Needed: ${sprints.toFixed(2)}`, "Estimate for roadmap"];
+      }
+    },
+    {
+      name: "Defect Leakage %",
+      inputs: ["UAT Defects", "QA Defects"],
+      compute: ([uat, qa]) => {
+        const total = uat + qa;
+        if (total <= 0) return [null, "N/A", ""];
+        const percent = (uat / total) * 100;
+        const text = `Leakage: ${percent.toFixed(2)}%`;
+        const insight = percent <= 10 ? "Excellent QA" : percent <= 20 ? "Acceptable" : "High Leakage – Improve QA";
+        return [percent, text, insight];
+      }
+    },
+    {
+      name: "Sprint Goal Success Rate",
+      inputs: ["Sprints Met Goal", "Total Sprints"],
+      compute: ([m, t]) => {
+        if (t <= 0) return [null, "N/A", ""];
+        const percent = (m / t) * 100;
+        const text = `Success Rate: ${percent.toFixed(2)}%`;
+        const insight = percent >= 80 ? "Consistent Delivery" : percent >= 60 ? "Needs Focus" : "Unstable Goals or Execution";
+        return [percent, text, insight];
+      }
+    }
+  ];
+
+  // Render inputs with buttons
+  const container = document.getElementById("calculator");
+
+  metrics.forEach((m, idx) => {
+    const div = document.createElement("div");
+    div.className = "section";
+    div.innerHTML = `<h2>${idx + 1}. ${m.name}</h2>`;
+    m.inputs.forEach((label, i) => {
+      const id = `m${idx}_i${i}`;
+      div.innerHTML += `${label}: <input type="text" id="${id}"> `;
+    });
+    div.innerHTML += 'asdf';
+    div.innerHTML += `<br><button onclick="calculateOne(${idx})">Calculate</button>`;
+    div.innerHTML += `<div class="result" id="res${idx}"></div>`;
+    container.appendChild(div);
+  });
+
+  function getClassByInsight(insight) {
+    if (insight.includes("Excellent") || insight.includes("Good") || insight.includes("Healthy") || insight.includes("Consistent") || insight.includes("Reliable"))
+      return "good";
+    if (insight.includes("Acceptable") || insight.includes("Estimate"))
+      return "warning";
+    if (insight.includes("Overload") || insight.includes("Delayed") || insight.includes("Risk") || insight.includes("Unstable"))
+      return "bad";
+    return "";
+  }
+
+  function calculateOne(idx) {
+    const m = metrics[idx];
+    const values = m.inputs.map((_, i) => {
+      const val = document.getElementById(`m${idx}_i${i}`).value;
+      return isNaN(val) ? val : parseFloat(val);
+    });
+    const [val, resultText, insight] = m.compute(values);
+    const resDiv = document.getElementById(`res${idx}`);
+    const insightClass = getClassByInsight(insight);
+    resDiv.innerHTML = `${resultText} <span class="insight ${insightClass}">(${insight})</span>`;
+  }
+</script>
+
+</body>
+</html>
